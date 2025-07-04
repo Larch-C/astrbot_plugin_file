@@ -1,0 +1,7 @@
+{
+    "directory_path": {
+        "description": "目录",
+        "type": "string",
+        "default": ""
+    }
+}
