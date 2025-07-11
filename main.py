@@ -7,7 +7,7 @@ import shutil
 
 # 创建配置对象
 # 注册插件的装饰器
-@register("文件操作", "Chris", "一个简单的文件发送、删除、移动、复制和查看文件夹内容插件", "1.0.0")
+@register("文件操作", "Chris", "一个简单的文件发送、删除、移动、复制和查看文件夹内容插件", "1.1.0")
 class FileSenderPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
