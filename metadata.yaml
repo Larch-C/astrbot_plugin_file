@@ -1,6 +1,6 @@
 name: "astrbot_plugin_file"
-desc: "一个简单的文件发送、删除和查看文件夹内容插件"
+desc: "一个简单的文件发送、上传、删除和查看文件夹内容插件"
 help: "指令：/发送 /查看 /删除 ..."
-version: "v1.1.0"
+version: "v1.2.0"
 author: "Chris"
 repo: "https://github.com/Chris95743/astrbot_plugin_file"
