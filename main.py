@@ -27,13 +27,41 @@ class FileSenderPlugin(Star):
             yield event.plain_result(f"指定的路径是一个目录，而不是文件：{file_path}")
             return
 
+        # 检查文件大小（限制为50MB）
+        file_size = os.path.getsize(full_file_path)
+        if file_size == 0:
+            yield event.plain_result(f"文件 {file_path} 是空文件，无法发送。")
+            return
+        if file_size > 50 * 1024 * 1024:  # 50MB
+            yield event.plain_result(f"文件 {file_path} 大小超过50MB限制，无法发送。")
+            return
+
         # 获取文件名（不带路径）
         file_name = os.path.basename(file_path)
 
+        # 检查文件是否可读
+        try:
+            with open(full_file_path, 'rb') as f:
+                f.read(1)  # 测试读取
+        except Exception as e:
+            yield event.plain_result(f"无法读取文件 {file_path}: {str(e)}")
+            return
+
         # 发送文件
         yield event.plain_result(f"开始发送文件 {file_name}...")
-        yield event.chain_result([File(name=file_name, file=full_file_path)])
-        yield event.plain_result(f"文件 {file_name} 已发送。")
+        yield event.plain_result(f"文件路径: {full_file_path}")
+        yield event.plain_result(f"文件大小: {file_size / 1024:.2f} KB")
+        
+        try:
+            yield event.chain_result([File(name=file_name, file=full_file_path)])
+            yield event.plain_result(f"文件 {file_name} 已发送。")
+        except Exception as e:
+            yield event.plain_result(f"发送文件失败: {str(e)}")
+            yield event.plain_result("可能的原因:")
+            yield event.plain_result("1. 文件路径包含特殊字符")
+            yield event.plain_result("2. 文件大小超过平台限制")
+            yield event.plain_result("3. 文件类型不被支持")
+            yield event.plain_result("4. 机器人没有文件访问权限")
 
     # 根据路径删除文件
     async def delete_file(self, event: AstrMessageEvent, file_path: str):
@@ -167,7 +195,7 @@ class FileSenderPlugin(Star):
             message_text = message.text
             break  # 获取第一个非 At 消息
 
-        parts = message_text.split()
+        parts = message_text.split(None, 1)
 
         # 检查命令格式是否正确
         if len(parts) < 2:
@@ -199,7 +227,7 @@ class FileSenderPlugin(Star):
             message_text = message.text
             break  # 获取第一个非 At 消息
 
-        parts = message_text.split()
+        parts = message_text.split(None, 1)
 
         # 检查命令格式是否正确
         if len(parts) < 2:
@@ -231,7 +259,7 @@ class FileSenderPlugin(Star):
             message_text = message.text
             break  # 获取第一个非 At 消息
 
-        parts = message_text.split()
+        parts = message_text.split(None, 1)
 
         # 检查命令格式是否正确
         if len(parts) < 2:
@@ -263,7 +291,7 @@ class FileSenderPlugin(Star):
             message_text = message.text
             break  # 获取第一个非 At 消息
 
-        parts = message_text.split()
+        parts = message_text.split(None, 1)
 
         # 检查命令格式是否正确
         if len(parts) < 2:
@@ -289,3 +317,69 @@ class FileSenderPlugin(Star):
 /复制 源路径 目标路径 - 复制指定路径的文件或目录
 /文件帮助 - 显示本帮助信息（除此命令外，其余命令均默认开启管理员权限。）"""
         yield event.plain_result(help_text)
+
+    # 解析命令并移动文件或目录
+    @filter.permission_type(filter.PermissionType.ADMIN)
+    @filter.command("移动")
+    async def move_command(self, event: AstrMessageEvent):
+        '''移动指定文件或目录'''
+        messages = event.get_messages()
+
+        if not messages:
+            yield event.plain_result("请输入源路径和目标路径，格式为 移动 源路径 目标路径")
+            return
+
+        # 处理消息中的 At 对象
+        message_text = ""
+        for message in messages:
+            if isinstance(message, At):
+                continue  # 跳过 At 类型的消息
+            message_text = message.text
+            break  # 获取第一个非 At 消息
+
+        parts = message_text.split(None, 2)
+
+        # 检查命令格式是否正确
+        if len(parts) < 3:
+            yield event.plain_result("请输入正确的路径格式，格式为 移动 源路径 目标路径")
+            return
+
+        source_path = parts[1]
+        destination_path = parts[2]
+
+        # 调用移动方法
+        async for result in self.move(event, source_path, destination_path):
+            yield result
+
+    # 解析命令并复制文件或目录
+    @filter.permission_type(filter.PermissionType.ADMIN)
+    @filter.command("复制")
+    async def copy_command(self, event: AstrMessageEvent):
+        '''复制指定文件或目录'''
+        messages = event.get_messages()
+
+        if not messages:
+            yield event.plain_result("请输入源路径和目标路径，格式为 复制 源路径 目标路径")
+            return
+
+        # 处理消息中的 At 对象
+        message_text = ""
+        for message in messages:
+            if isinstance(message, At):
+                continue  # 跳过 At 类型的消息
+            message_text = message.text
+            break  # 获取第一个非 At 消息
+
+        parts = message_text.split(None, 2)
+
+        # 检查命令格式是否正确
+        if len(parts) < 3:
+            yield event.plain_result("请输入正确的路径格式，格式为 复制 源路径 目标路径")
+            return
+
+        source_path = parts[1]
+        destination_path = parts[2]
+
+        # 调用复制方法
+        async for result in self.copy(event, source_path, destination_path):
+            yield result
