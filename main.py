@@ -32,8 +32,8 @@ class FileSenderPlugin(Star):
         if file_size == 0:
             yield event.plain_result(f"文件 {file_path} 是空文件，无法发送。")
             return
-        if file_size > 50 * 1024 * 1024:  # 50MB
-            yield event.plain_result(f"文件 {file_path} 大小超过50MB限制，无法发送。")
+        if file_size > 2 * 1024 * 1024 * 1024:  # 2GB
+            yield event.plain_result(f"文件 {file_path} 大小超过2GB限制，无法发送。")
             return
 
         # 获取文件名（不带路径）
