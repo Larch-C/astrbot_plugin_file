@@ -2,6 +2,7 @@ from astrbot.api.message_components import *
 from astrbot.api.event import filter, AstrMessageEvent, MessageEventResult
 from astrbot.api import AstrBotConfig
 from astrbot.api.star import Context, Star, register
+from astrbot.core.utils.io import download_image_by_url, download_file
 import os
 import shutil
 import time
@@ -16,11 +17,24 @@ class FileSenderPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
         self.base_path = config.get('FileBasePath', '/default/path')  # 配置文件中的基础路径
-        self.user_waiting = {}  # 等待上传文件的用户
+        self.user_waiting = {}  # 等待上传文件的用户 {uid: {'time': time, 'path': path, 'extension': ext}}
+    
+    def normalize_path(self, input_path: str) -> str:
+        """规范化路径，兼容Windows和Linux"""
+        # 规范化路径分隔符
+        normalized_path = input_path.replace('\\', '/').replace('//', '/')
+        
+        # 处理绝对路径和相对路径
+        if os.path.isabs(normalized_path):
+            # 如果是绝对路径，直接使用
+            return os.path.normpath(normalized_path)
+        else:
+            # 如果是相对路径，与base_path拼接
+            return os.path.normpath(os.path.join(self.base_path, normalized_path))
 
     # 根据路径发送文件
     async def send_file(self, event: AstrMessageEvent, file_path: str):
-        full_file_path = os.path.join(self.base_path, file_path)
+        full_file_path = self.normalize_path(file_path)
 
         # 检查文件是否存在
         if not os.path.exists(full_file_path):
@@ -70,7 +84,7 @@ class FileSenderPlugin(Star):
 
     # 根据路径删除文件
     async def delete_file(self, event: AstrMessageEvent, file_path: str):
-        full_file_path = os.path.join(self.base_path, file_path)
+        full_file_path = self.normalize_path(file_path)
 
         # 检查文件是否存在
         if not os.path.exists(full_file_path):
@@ -91,7 +105,7 @@ class FileSenderPlugin(Star):
 
     # 根据路径删除目录
     async def delete_directory(self, event: AstrMessageEvent, dir_path: str):
-        full_dir_path = os.path.join(self.base_path, dir_path)
+        full_dir_path = self.normalize_path(dir_path)
 
         # 检查目录是否存在
         if not os.path.exists(full_dir_path):
@@ -112,7 +126,7 @@ class FileSenderPlugin(Star):
 
     # 查看目录内容
     async def list_files(self, event: AstrMessageEvent, dir_path: str):
-        full_dir_path = os.path.join(self.base_path, dir_path)
+        full_dir_path = self.normalize_path(dir_path)
 
         # 检查目录是否存在
         if not os.path.exists(full_dir_path):
@@ -146,8 +160,8 @@ class FileSenderPlugin(Star):
 
     # 移动文件或目录
     async def move(self, event: AstrMessageEvent, source_path: str, destination_path: str):
-        source_full_path = os.path.join(self.base_path, source_path)
-        destination_full_path = os.path.join(self.base_path, destination_path)
+        source_full_path = self.normalize_path(source_path)
+        destination_full_path = self.normalize_path(destination_path)
 
         # 检查源文件/目录是否存在
         if not os.path.exists(source_full_path):
@@ -163,8 +177,8 @@ class FileSenderPlugin(Star):
 
     # 复制文件或目录
     async def copy(self, event: AstrMessageEvent, source_path: str, destination_path: str):
-        source_full_path = os.path.join(self.base_path, source_path)
-        destination_full_path = os.path.join(self.base_path, destination_path)
+        source_full_path = self.normalize_path(source_path)
+        destination_full_path = self.normalize_path(destination_path)
 
         # 检查源文件/目录是否存在
         if not os.path.exists(source_full_path):
@@ -183,10 +197,10 @@ class FileSenderPlugin(Star):
 
     # 处理文件上传到指定目录
     async def upload_file(self, event: AstrMessageEvent, file_path: str, file_content: bytes, file_name: str):
-        full_file_path = os.path.join(self.base_path, file_path, file_name)
+        target_dir = self.normalize_path(file_path)
+        full_file_path = os.path.join(target_dir, file_name)
         
         # 确保目录存在
-        target_dir = os.path.join(self.base_path, file_path)
         if not os.path.exists(target_dir):
             try:
                 os.makedirs(target_dir)
@@ -208,54 +222,6 @@ class FileSenderPlugin(Star):
             yield event.plain_result(f"文件大小: {file_size / 1024:.2f} KB")
         except Exception as e:
             yield event.plain_result(f"上传文件失败: {str(e)}")
-
-    # 下载图片文件
-    async def download_image_by_url(self, url: str) -> str:
-        """下载图片到临时目录"""
-        try:
-            temp_dir = os.path.join(self.base_path, "temp")
-            if not os.path.exists(temp_dir):
-                os.makedirs(temp_dir)
-            
-            # 生成临时文件名
-            temp_filename = f"temp_image_{uuid.uuid4().hex[:8]}.jpg"
-            temp_path = os.path.join(temp_dir, temp_filename)
-            
-            # 下载图片
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url) as response:
-                    if response.status == 200:
-                        with open(temp_path, 'wb') as f:
-                            async for chunk in response.content.iter_chunked(8192):
-                                f.write(chunk)
-                        return temp_path
-                    else:
-                        raise Exception(f"下载失败，状态码: {response.status}")
-        except Exception as e:
-            raise Exception(f"下载图片失败: {str(e)}")
-
-    # 下载文件
-    async def download_file(self, url: str, filename: str) -> str:
-        """下载文件到临时目录"""
-        try:
-            temp_dir = os.path.join(self.base_path, "temp")
-            if not os.path.exists(temp_dir):
-                os.makedirs(temp_dir)
-            
-            temp_path = os.path.join(temp_dir, filename)
-            
-            # 下载文件
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url) as response:
-                    if response.status == 200:
-                        with open(temp_path, 'wb') as f:
-                            async for chunk in response.content.iter_chunked(8192):
-                                f.write(chunk)
-                        return temp_path
-                    else:
-                        raise Exception(f"下载失败，状态码: {response.status}")
-        except Exception as e:
-            raise Exception(f"下载文件失败: {str(e)}")
 
     # 解析命令并发送文件
     @filter.permission_type(filter.PermissionType.ADMIN)
@@ -376,7 +342,15 @@ class FileSenderPlugin(Star):
 
         # 检查命令格式是否正确
         if len(parts) < 2:
-            yield event.plain_result("请输入正确的目录路径，格式为 /path/file")
+            # 获取当前插件目录
+            current_file = os.path.abspath(__file__)
+            plugin_dir = os.path.dirname(os.path.dirname(current_file))
+            
+            help_message = f"""请输入正确的目录路径，格式为 查看 路径
+当前插件所在目录: {plugin_dir}
+示例: 查看 C:\\Users\\用户名\\Documents 或 查看 /home/user/documents"""
+            
+            yield event.plain_result(help_message)
             return
 
         dir_path = parts[1]
@@ -391,14 +365,18 @@ class FileSenderPlugin(Star):
         '''显示帮助信息'''
         help_text = """指令说明：    
 /发送 路径 - 发送指定路径的文件（绝对路径） 
-/上传 路径 - 上传文件到指定目录（绝对路径，暂不支持视频）
+/上传 后缀名 上传目录 - 上传文件到指定目录（如: /上传 .mp4 /Chris）
 /删除 路径 - 删除指定路径的文件（绝对路径） 
 /删除目录 路径 - 删除指定路径的目录（绝对路径） 
 /查看 路径 - 查看指定目录的文件和子目录（绝对路径） 
 /移动 源路径 目标路径 - 移动指定路径的文件或目录
 /复制 源路径 目标路径 - 复制指定路径的文件或目录
 /插件路径 - 获取插件基础路径（此插件的上上级目录）
-/文件帮助 - 显示本帮助信息（除此命令外，其余命令均默认开启管理员权限。）"""
+/文件帮助 - 显示本帮助信息（除此命令外，其余命令均默认开启管理员权限。）
+
+上传说明: 
+- 文件名格式为 file_时间戳.后缀名
+- 示例: /上传 .mp4 /Chris (视频文件) /上传 .jpg /temp (图片文件) /上传 无后缀 /data (无扩展名)"""
         yield event.plain_result(help_text)
 
     # 解析命令并移动文件或目录
@@ -491,11 +469,11 @@ class FileSenderPlugin(Star):
     @filter.permission_type(filter.PermissionType.ADMIN)
     @filter.command("上传")
     async def upload_command(self, event: AstrMessageEvent):
-        '''在规定秒数(60s)内上传一个文件到指定目录'''
+        '''上传文件，格式: /上传 后缀名 上传目录 (如 /上传 .mp4 /Chris)'''
         messages = event.get_messages()
 
         if not messages:
-            yield event.plain_result("请输入目标路径，格式为 上传 路径")
+            yield event.plain_result("请输入后缀名和上传目录，格式为: 上传 .mp4 /Chris")
             return
 
         # 处理消息中的 At 对象
@@ -506,18 +484,31 @@ class FileSenderPlugin(Star):
             message_text = message.text
             break  # 获取第一个非 At 消息
 
-        parts = message_text.split(None, 1)
+        parts = message_text.split(None, 2)
 
         # 检查命令格式是否正确
-        if len(parts) < 2:
-            yield event.plain_result("请输入正确的目标路径，格式为 上传 路径")
+        if len(parts) < 3:
+            yield event.plain_result("请输入后缀名和上传目录，格式为: 上传 .mp4 /Chris")
             return
 
-        target_path = parts[1]
-        uid = event.get_sender_id()
-        self.user_waiting[uid] = {'time': time.time(), 'path': target_path}
+        extension = parts[1].strip()
+        target_path = parts[2].strip()
         
-        yield event.plain_result(f"文件上传器: 请在 60s 内上传一个文件到目录 {target_path}。")
+        # 处理特殊情况
+        if extension == "无后缀":
+            extension = ""
+        elif not extension.startswith(".") and extension != "":
+            extension = "." + extension  # 自动添加点号
+
+        uid = event.get_sender_id()
+        self.user_waiting[uid] = {
+            'time': time.time(), 
+            'path': target_path,
+            'extension': extension
+        }
+        
+        ext_text = f"后缀名 {extension}" if extension else "无后缀"
+        yield event.plain_result(f"文件上传器: 请在 60s 内上传一个文件，将保存到 {target_path}，文件 {ext_text}。")
         await asyncio.sleep(60)
         
         if uid in self.user_waiting:
@@ -543,178 +534,39 @@ class FileSenderPlugin(Star):
                 has_file = True
                 break
         
-        # 如果没有文件或图片组件，不处理
+        # 如果没有文件组件，不处理
         if not has_file:
             return
         
         # 获取等待信息
         waiting_info = self.user_waiting.pop(uid)
         target_path = waiting_info['path']
+        extension = waiting_info['extension']
         
         for comp in event.message_obj.message:
-            if isinstance(comp, File):
+            if isinstance(comp, (File, Image, Video)):
                 try:
-                    file_name = comp.name if comp.name else f"file_{int(time.time())}"
+                    # 生成文件名: 时间戳 + 扩展名
+                    file_name = f"file_{int(time.time())}{extension}"
                     
-                    # 使用异步方法获取文件路径
-                    file_path = await comp.get_file()
-                    
-                    if file_path and os.path.exists(file_path):
-                        # 读取文件内容
-                        with open(file_path, 'rb') as f:
-                            file_content = f.read()
+                    # 统一使用 get_file() 方法获取文件路径
+                    if hasattr(comp, 'get_file'):
+                        file_path = await comp.get_file()
+                        if file_path and os.path.exists(file_path):
+                            with open(file_path, 'rb') as f:
+                                file_content = f.read()
+                        else:
+                            yield event.plain_result(f"无法获取文件: {file_path}")
+                            return
                     else:
-                        yield event.plain_result(f"文件路径无效: {file_path}")
+                        yield event.plain_result("该文件类型不支持 get_file() 方法")
                         return
                     
                     # 上传文件
                     async for result in self.upload_file(event, target_path, file_content, file_name):
                         yield result
+                    return  # 处理完第一个文件就退出
                         
                 except Exception as e:
                     yield event.plain_result(f"处理文件失败: {str(e)}")
-                    
-            elif isinstance(comp, Image):
-                try:
-                    file_name = f"image_{int(time.time())}.jpg"
-                    
-                    # 处理图片URL或文件路径
-                    image_source = comp.url if comp.url else comp.file
-                    
-                    if image_source.startswith("http"):
-                        # 如果是URL，下载图片
-                        try:
-                            image_path = await self.download_image_by_url(image_source)
-                            # 读取图片内容
-                            with open(image_path, 'rb') as f:
-                                file_content = f.read()
-                            # 删除临时文件
-                            os.remove(image_path)
-                        except Exception as e:
-                            yield event.plain_result(f"下载图片失败: {str(e)}")
-                            return
-                    elif image_source.startswith("file:///"):
-                        # 去掉file://前缀
-                        image_path = image_source.replace("file:///", "")
-                        
-                        if not os.path.exists(image_path):
-                            yield event.plain_result(f"图片文件不存在: {image_path}")
-                            return
-                        
-                        # 读取图片内容
-                        with open(image_path, 'rb') as f:
-                            file_content = f.read()
-                    else:
-                        image_path = image_source
-                        
-                        if not os.path.exists(image_path):
-                            yield event.plain_result(f"图片文件不存在: {image_path}")
-                            return
-                        
-                        # 读取图片内容
-                        with open(image_path, 'rb') as f:
-                            file_content = f.read()
-                    
-                    # 上传文件
-                    async for result in self.upload_file(event, target_path, file_content, file_name):
-                        yield result
-                        
-                except Exception as e:
-                    yield event.plain_result(f"处理图片失败: {str(e)}")
-                    
-            elif isinstance(comp, Video):
-                try:
-                    file_name = f"video_{int(time.time())}.mp4"
-                    
-                    # 尝试使用异步方法获取视频文件路径，类似File组件的处理
-                    try:
-                        if hasattr(comp, 'get_file'):
-                            video_path = await comp.get_file()
-                            yield event.plain_result(f"调试: 视频文件路径: {video_path}")
-                            
-                            if video_path and os.path.exists(video_path):
-                                # 读取视频内容
-                                with open(video_path, 'rb') as f:
-                                    file_content = f.read()
-                            else:
-                                yield event.plain_result(f"视频文件路径无效: {video_path}")
-                                # 检查是否是相对路径，尝试在不同目录中查找
-                                possible_paths = [
-                                    os.path.join("/tmp", video_path),
-                                    os.path.join("/var/tmp", video_path),
-                                    os.path.join(self.base_path, "temp", video_path),
-                                    os.path.join(os.getcwd(), video_path)
-                                ]
-                                
-                                for possible_path in possible_paths:
-                                    if os.path.exists(possible_path):
-                                        yield event.plain_result(f"找到视频文件: {possible_path}")
-                                        with open(possible_path, 'rb') as f:
-                                            file_content = f.read()
-                                        break
-                                else:
-                                    yield event.plain_result("在所有可能的路径中都未找到视频文件")
-                                    return
-                        else:
-                            # 如果没有get_file方法，尝试直接访问file属性
-                            video_source = comp.file if hasattr(comp, 'file') else None
-                            
-                            if not video_source:
-                                yield event.plain_result("无法获取视频文件路径")
-                                return
-                            
-                            if video_source.startswith("http"):
-                                # 如果是URL，下载视频
-                                temp_dir = os.path.join(self.base_path, "temp")
-                                if not os.path.exists(temp_dir):
-                                    os.makedirs(temp_dir)
-                                
-                                video_path = os.path.join(temp_dir, file_name)
-                                
-                                # 下载视频
-                                async with aiohttp.ClientSession() as session:
-                                    async with session.get(video_source) as response:
-                                        if response.status == 200:
-                                            with open(video_path, 'wb') as f:
-                                                async for chunk in response.content.iter_chunked(8192):
-                                                    f.write(chunk)
-                                            
-                                            # 读取视频内容
-                                            with open(video_path, 'rb') as f:
-                                                file_content = f.read()
-                                            # 删除临时文件
-                                            os.remove(video_path)
-                                        else:
-                                            yield event.plain_result(f"下载视频失败，状态码: {response.status}")
-                                            return
-                            elif video_source.startswith("file:///"):
-                                # 去掉file://前缀
-                                video_path = video_source.replace("file:///", "")
-                                
-                                if not os.path.exists(video_path):
-                                    yield event.plain_result(f"视频文件不存在: {video_path}")
-                                    return
-                                
-                                # 读取视频内容
-                                with open(video_path, 'rb') as f:
-                                    file_content = f.read()
-                            else:
-                                video_path = video_source
-                                
-                                if not os.path.exists(video_path):
-                                    yield event.plain_result(f"视频文件不存在: {video_path}")
-                                    return
-                                
-                                # 读取视频内容
-                                with open(video_path, 'rb') as f:
-                                    file_content = f.read()
-                    except Exception as e:
-                        yield event.plain_result(f"获取视频文件失败: {str(e)}")
-                        return
-                    
-                    # 上传视频
-                    async for result in self.upload_file(event, target_path, file_content, file_name):
-                        yield result
-                        
-                except Exception as e:
-                    yield event.plain_result(f"处理视频失败: {str(e)}")
+                    return
