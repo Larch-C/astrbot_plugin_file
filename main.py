@@ -66,14 +66,10 @@ class FileSenderPlugin(Star):
             yield event.plain_result(f"无法读取文件 {file_path}: {str(e)}")
             return
 
-        # 发送文件
-        yield event.plain_result(f"开始发送文件 {file_name}...")
-        yield event.plain_result(f"文件路径: {full_file_path}")
-        yield event.plain_result(f"文件大小: {file_size / 1024:.2f} KB")
-        
+        # 发送文件 - 合并多条消息为一条
         try:
             yield event.chain_result([File(name=file_name, file=full_file_path)])
-            yield event.plain_result(f"文件 {file_name} 已发送。")
+            yield event.plain_result(f"文件 {file_name} 发送成功 (大小: {file_size / 1024:.2f} KB)")
         except Exception as e:
             yield event.plain_result(f"发送文件失败: {str(e)}")
             yield event.plain_result("可能的原因:")
@@ -218,8 +214,7 @@ class FileSenderPlugin(Star):
             # 写入文件
             with open(full_file_path, 'wb') as f:
                 f.write(file_content)
-            yield event.plain_result(f"文件 {file_name} 已成功上传到 {file_path}")
-            yield event.plain_result(f"文件大小: {file_size / 1024:.2f} KB")
+            yield event.plain_result(f"文件 {file_name} 上传成功到 {file_path} (大小: {file_size / 1024:.2f} KB)")
         except Exception as e:
             yield event.plain_result(f"上传文件失败: {str(e)}")
 
